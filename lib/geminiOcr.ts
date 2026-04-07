@@ -97,6 +97,24 @@ export async function runOcr(
     onProgress(82)
 
     if (!res.ok) {
+      // ── 429 : quota dépassé — cas distinct du hors-ligne ────────────────
+      if (res.status === 429) {
+        let retryAfter = 60
+        try {
+          const body = await res.json() as { retryAfter?: number }
+          if (typeof body.retryAfter === 'number') retryAfter = body.retryAfter
+        } catch { /* body non-JSON */ }
+
+        console.warn(`[GeminiOCR] Quota dépassé — retry in ${retryAfter}s`)
+        return {
+          preprocessedUrl: imageUrl,
+          pendingOffline:  true,
+          offlineQueueId:  offlineId,
+          quotaError:      true,
+          retryAfter,
+        }
+      }
+
       throw new Error(`API ${res.status}: ${await res.text().catch(() => '')}`)
     }
 

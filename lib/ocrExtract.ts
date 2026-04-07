@@ -39,6 +39,10 @@ export interface OcrExtracted {
   pendingOffline?: boolean
   /** Identifiant dans la file IndexedDB (lib/offlineQueue.ts) */
   offlineQueueId?: string
+  /** true si l'échec est dû à un quota Gemini dépassé (≠ réseau coupé) */
+  quotaError?: boolean
+  /** Secondes à attendre avant de pouvoir réessayer (extrait du 429) */
+  retryAfter?: number
 }
 
 // ─────────────────────────────────────────────────────────────

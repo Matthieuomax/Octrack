@@ -7,6 +7,13 @@
  *
  * Format de requête  : POST, JSON { imageBase64: string, mimeType?: string }
  * Format de réponse  : JSON { total: number|null, volume: number|null, pricePerLiter: number|null }
+ *
+ * Codes d'erreur retournés :
+ *   400 — imageBase64 manquant
+ *   429 — quota Gemini dépassé (retryAfter indique quand réessayer)
+ *   500 — clé API manquante ou erreur interne
+ *   502 — erreur API Gemini (autre que quota)
+ *   503 — Gemini indisponible / timeout
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -37,6 +44,38 @@ Ne devine JAMAIS. Les chiffres 7-segments peuvent être flous — doute = null.
 Réponds UNIQUEMENT avec ce JSON, rien d'autre :
 {"total": number|null, "volume": number|null, "pricePerLiter": number|null}`
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Réponse vide normalisée — permet au client de gérer gracieusement les nulls. */
+const EMPTY_RESULT = { total: null, volume: null, pricePerLiter: null }
+
+/**
+ * Extrait le délai "Retry-After" de la réponse Gemini (en secondes).
+ * Gemini peut retourner un header Retry-After ou un body avec retryDelay.
+ */
+function parseRetryAfter(headers: Headers, bodyText: string): number {
+  // 1. Header standard HTTP
+  const headerVal = headers.get('Retry-After') ?? headers.get('retry-after')
+  if (headerVal) {
+    const secs = parseInt(headerVal, 10)
+    if (!isNaN(secs) && secs > 0) return secs
+  }
+
+  // 2. Body JSON Google AI → error.details[].retryDelay ("30s")
+  try {
+    const body = JSON.parse(bodyText)
+    const details: Array<{ retryDelay?: string }> = body?.error?.details ?? []
+    for (const d of details) {
+      if (d.retryDelay) {
+        const secs = parseInt(d.retryDelay, 10)
+        if (!isNaN(secs) && secs > 0) return secs
+      }
+    }
+  } catch { /* body non-JSON, on ignore */ }
+
+  return 60 // fallback : 60 secondes
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -50,14 +89,14 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       console.error('[OCR route] GEMINI_API_KEY manquante')
       return NextResponse.json(
-        { error: 'GEMINI_API_KEY non configurée', total: null, volume: null, pricePerLiter: null },
+        { error: 'GEMINI_API_KEY non configurée', ...EMPTY_RESULT },
         { status: 500 },
       )
     }
 
     if (!imageBase64) {
       return NextResponse.json(
-        { error: 'imageBase64 manquant', total: null, volume: null, pricePerLiter: null },
+        { error: 'imageBase64 manquant', ...EMPTY_RESULT },
         { status: 400 },
       )
     }
@@ -66,49 +105,105 @@ export async function POST(req: NextRequest) {
     const base64Data = imageBase64.replace(/^data:[^;]+;base64,/, '')
 
     // ── Appel Gemini 1.5 Flash ─────────────────────────────────────────────
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT }],
-          },
-          contents: [
-            {
-              parts: [
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
-                  },
-                },
-                {
-                  text: 'Extrais les données de la pompe.',
-                },
-              ],
+    let geminiRes: Response
+    try {
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: SYSTEM_PROMPT }],
             },
-          ],
-          generationConfig: {
-            temperature:      0,       // déterministe — critique pour les chiffres
-            topK:             1,
-            maxOutputTokens:  128,
-            responseMimeType: 'application/json',
-          },
-        }),
-      },
-    )
+            contents: [
+              {
+                parts: [
+                  {
+                    inline_data: {
+                      mime_type: mimeType,
+                      data: base64Data,
+                    },
+                  },
+                  {
+                    text: 'Extrais les données de la pompe.',
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature:      0,       // déterministe — critique pour les chiffres
+              topK:             1,
+              maxOutputTokens:  128,
+              responseMimeType: 'application/json',
+            },
+          }),
+          signal: AbortSignal.timeout(30_000), // 30 s — edge functions peuvent prendre plus
+        },
+      )
+    } catch (fetchErr) {
+      // Timeout réseau ou DNS failure
+      const isTimeout = fetchErr instanceof DOMException && fetchErr.name === 'TimeoutError'
+      console.error(`[OCR route] ${isTimeout ? 'Timeout' : 'Réseau'} Gemini:`, fetchErr)
+      return NextResponse.json(
+        {
+          error:   isTimeout ? 'Gemini timeout (>30s)' : 'Impossible de joindre Gemini',
+          offline: true,
+          ...EMPTY_RESULT,
+        },
+        { status: 503 },
+      )
+    }
 
+    // ── Gestion des erreurs HTTP Gemini ────────────────────────────────────
     if (!geminiRes.ok) {
-      const errBody = await geminiRes.text().catch(() => '(no body)')
+      const errBody = await geminiRes.text().catch(() => '')
+
+      // 429 — Quota / Rate Limit
+      if (geminiRes.status === 429) {
+        const retryAfter = parseRetryAfter(geminiRes.headers, errBody)
+        console.warn(`[OCR route] Quota Gemini — retry in ${retryAfter}s`)
+        return NextResponse.json(
+          {
+            error:        'quota_exceeded',
+            message:      'Quota Gemini dépassé — réessaie dans quelques secondes.',
+            retryAfter,   // en secondes — le client peut afficher un compte à rebours
+            ...EMPTY_RESULT,
+          },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(retryAfter) },
+          },
+        )
+      }
+
+      // 400 — Image corrompue ou payload invalide
+      if (geminiRes.status === 400) {
+        console.warn('[OCR route] Gemini 400 — image invalide ou payload mal formé:', errBody)
+        return NextResponse.json(
+          { error: 'image_invalid', message: 'Image non reconnue par Gemini.', ...EMPTY_RESULT },
+          { status: 400 },
+        )
+      }
+
+      // 401 / 403 — Clé API invalide ou révoquée
+      if (geminiRes.status === 401 || geminiRes.status === 403) {
+        console.error(`[OCR route] Gemini ${geminiRes.status} — clé API invalide ou révoquée`)
+        return NextResponse.json(
+          { error: 'api_key_invalid', message: 'Clé API Gemini invalide.', ...EMPTY_RESULT },
+          { status: 500 }, // on expose 500 (ne pas leak le 403 au client)
+        )
+      }
+
+      // 5xx / autre
       console.error(`[OCR route] Gemini ${geminiRes.status}:`, errBody)
       return NextResponse.json(
-        { error: `Gemini API error ${geminiRes.status}`, total: null, volume: null, pricePerLiter: null },
+        { error: `gemini_error_${geminiRes.status}`, message: `Erreur Gemini (${geminiRes.status}).`, ...EMPTY_RESULT },
         { status: 502 },
       )
     }
 
+    // ── Parse de la réponse Gemini ─────────────────────────────────────────
     const geminiData = await geminiRes.json() as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
     }
@@ -126,7 +221,9 @@ export async function POST(req: NextRequest) {
         .trim()
       parsed = JSON.parse(cleaned)
     } catch {
-      console.warn('[OCR route] Parse JSON échoué:', rawText)
+      console.warn('[OCR route] Parse JSON échoué — rawText:', rawText)
+      // On retourne les nulls proprement plutôt que de crasher
+      return NextResponse.json(EMPTY_RESULT)
     }
 
     // ── Validation des plages physiques ────────────────────────────────────
@@ -146,7 +243,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[OCR route] Erreur inattendue:', err)
     return NextResponse.json(
-      { error: 'Erreur interne', total: null, volume: null, pricePerLiter: null },
+      { error: 'internal_error', message: 'Erreur interne du serveur.', ...EMPTY_RESULT },
       { status: 500 },
     )
   }
