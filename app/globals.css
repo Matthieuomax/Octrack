@@ -1,0 +1,363 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Leaflet (requis après : npm install leaflet) ─── */
+/* L'import est géré dans components/map/StationsMap.tsx */
+
+/* ─── Palette sombre (défaut) ─── */
+:root {
+  --color-bg: #15151A;
+  --color-surface: #1D1D27;
+  --color-surface-2: #252535;
+  --color-accent: #FF5500;
+  --color-alert: #FF3535;
+  --color-info: #29A9D1;
+  --color-positive: #39D176;
+  --color-content: #EDEEF7;
+  --color-muted: #6A6A82;
+  --color-border: rgba(255, 85, 0, 0.14);
+
+  /* Fond texturé asphalt */
+  --noise-opacity: 0.03;
+}
+
+/* ─── Palette claire ─── */
+.light {
+  --color-bg: #ECEAE7;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F5F4F1;
+  --color-accent: #E04800;
+  --color-alert: #CC2424;
+  --color-info: #0288C7;
+  --color-positive: #1FA84A;
+  --color-content: #161410;
+  --color-muted: #9A9880;
+  --color-border: rgba(224, 72, 0, 0.12);
+  --noise-opacity: 0.015;
+}
+
+/* ─── Reset & base ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans), 'DM Sans', system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-content);
+  min-height: 100dvh;
+  overflow-x: hidden;
+  /* Grain asphalt subtil */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 2px;
+  opacity: 0.5;
+}
+
+/* ─── Utilitaires ─── */
+.pb-nav {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 8px));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ─── Card standard ─── */
+.card {
+  background-color: var(--color-surface);
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+}
+
+.card-accent {
+  border-left: 3px solid var(--color-accent);
+}
+
+/* ─── Glow accent ─── */
+.glow-accent {
+  box-shadow: 0 0 20px rgba(255, 85, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.glow-accent-sm {
+  box-shadow: 0 0 12px rgba(255, 85, 0, 0.2);
+}
+
+/* ─── Input style ─── */
+.input-field {
+  background-color: var(--color-surface-2);
+  color: var(--color-content);
+  border: 1.5px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-family: inherit;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s ease;
+  -webkit-appearance: none;
+}
+
+.input-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 85, 0, 0.12);
+}
+
+.input-field::placeholder {
+  color: var(--color-muted);
+}
+
+/* ─── Select ─── */
+select.input-field {
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236A6A82' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 40px;
+}
+
+/* ─── Button ─── */
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+  font-family: var(--font-condensed), 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 16px 24px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 4px 16px rgba(255, 85, 0, 0.3);
+}
+
+.btn-primary:active {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-muted);
+  border: 1.5px solid var(--color-border);
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-ghost:active {
+  opacity: 0.7;
+}
+
+/* ─── Badge ─── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* ─── Period tabs ─── */
+.period-tab {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.period-tab.active {
+  background-color: var(--color-accent);
+  color: white;
+  font-weight: 700;
+}
+
+/* ─── Animations page ─── */
+.page-enter {
+  animation: slideUp 0.35s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stagger helpers */
+.delay-1 { animation-delay: 0.05s; opacity: 0; }
+.delay-2 { animation-delay: 0.1s; opacity: 0; }
+.delay-3 { animation-delay: 0.15s; opacity: 0; }
+.delay-4 { animation-delay: 0.2s; opacity: 0; }
+.delay-5 { animation-delay: 0.25s; opacity: 0; }
+
+/* ─── Gauge ─── */
+.gauge-track {
+  stroke: var(--color-surface-2);
+}
+
+.gauge-fill {
+  stroke: var(--color-accent);
+  transition: stroke-dashoffset 1s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+/* ─── Camera capture UI ─── */
+.camera-overlay {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.scan-frame-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--color-accent);
+  border-style: solid;
+}
+
+@keyframes scanLine {
+  0%, 100% { transform: translateY(0); opacity: 0.7; }
+  50% { transform: translateY(140px); opacity: 0.4; }
+}
+
+.scan-line {
+  animation: scanLine 2.4s ease-in-out infinite;
+}
+
+/* ─── Chart styles ─── */
+.chart-bar {
+  transform-origin: left center;
+  animation: barGrow 0.6s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+}
+
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ─── Overrides Leaflet — style Bitume/Octane ─────────────── */
+
+/* Masque l'image cassée du marker par défaut */
+.leaflet-default-icon-path {
+  display: none;
+}
+
+/* Contrôles zoom */
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.leaflet-control-zoom a {
+  background-color: #1D1D27 !important;
+  color: #6A6A82 !important;
+  border: none !important;
+  width: 38px !important;
+  height: 38px !important;
+  line-height: 38px !important;
+  font-size: 18px !important;
+  font-weight: 300 !important;
+  transition: all 0.15s ease !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #252535 !important;
+  color: #FF5500 !important;
+}
+
+.leaflet-control-zoom-in {
+  border-bottom: 1px solid rgba(255,85,0,0.1) !important;
+}
+
+/* Attribution */
+.leaflet-control-attribution {
+  background: rgba(14,14,18,0.7) !important;
+  color: #4A4A5A !important;
+  font-size: 9px !important;
+  padding: 3px 6px !important;
+  border-radius: 6px 0 0 0 !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-control-attribution a {
+  color: #6A6A82 !important;
+}
+
+/* Popups Octrack */
+.octrack-popup .leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.octrack-popup .leaflet-popup-content {
+  margin: 0 !important;
+}
+
+.octrack-popup .leaflet-popup-tip-container {
+  display: none !important;
+}
+
+/* Tuiles — fond sombre pendant le chargement */
+.leaflet-tile-pane {
+  background: #0E0E12;
+}
+
+/* Scrollbar dans la liste du sheet */
+.stations-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+/* Animation du dot utilisateur */
+@keyframes userPulse {
+  0%, 100% { box-shadow: 0 0 0 8px rgba(255,85,0,0.12); }
+  50% { box-shadow: 0 0 0 14px rgba(255,85,0,0.06); }
+}
+
+/* Masquer scrollbar horizontal sur chips */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
