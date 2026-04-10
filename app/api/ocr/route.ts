@@ -114,6 +114,10 @@ export async function POST(req: NextRequest) {
   // ── Appel Gemini 1.5 Flash ────────────────────────────────────────────────
   // NOTE : pas de `responseMimeType` dans generationConfig — ce champ est instable
   // selon la version Flash déployée. On nettoie le texte brut côté serveur.
+  //
+  // safetySettings : BLOCK_NONE sur toutes les catégories.
+  // Gemini peut bloquer des photos de pompes à cause d'un reflet ou d'un logo
+  // interprété comme "dangerous content". Ce comportement est documenté.
   const requestBody = {
     system_instruction: {
       parts: [{ text: SYSTEM_PROMPT }],
@@ -121,15 +125,23 @@ export async function POST(req: NextRequest) {
     contents: [
       {
         parts: [
+          // Format REST API : snake_case "inline_data" (≠ SDK JS "inlineData")
+          // Le préfixe "data:image/jpeg;base64," est DÉJÀ supprimé avant cet appel.
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
           { text: 'Extrais les données de la pompe.' },
         ],
       },
     ],
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH',        threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',  threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT',  threshold: 'BLOCK_NONE' },
+    ],
     generationConfig: {
-      temperature:    0,    // déterministe — obligatoire pour les chiffres
-      topK:           1,
-      maxOutputTokens: 256, // assez pour le JSON + éventuel padding Gemini
+      temperature:     0,    // déterministe — obligatoire pour les chiffres
+      topK:            1,
+      maxOutputTokens: 256,  // assez pour le JSON + éventuel padding Gemini
     },
   }
 
@@ -204,21 +216,57 @@ export async function POST(req: NextRequest) {
       candidates?: Array<{
         content?:      { parts?: Array<{ text?: string }> }
         finishReason?: string
+        safetyRatings?: Array<{ category: string; probability: string; blocked?: boolean }>
       }>
-      promptFeedback?: { blockReason?: string }
+      promptFeedback?: { blockReason?: string; safetyRatings?: Array<{ category: string; probability: string }> }
+      // Objet d'erreur complet retourné par Google sur certaines requêtes rejetées
+      error?: { code?: number; message?: string; status?: string; details?: unknown[] }
     }
 
-    // Vérifier si le prompt a été bloqué (Safety filters)
+    // ── Erreur Google structurée (parfois retournée avec HTTP 200 !) ─────────
+    if (data.error) {
+      const msg = data.error.message ?? JSON.stringify(data.error)
+      console.error('[OCR] Erreur Google dans le body (HTTP 200) :', msg, data.error)
+      return NextResponse.json(
+        { error: 'google_error', message: msg, details: data.error, ...EMPTY },
+        { status: 502 },
+      )
+    }
+
+    // ── Safety block au niveau du prompt ─────────────────────────────────────
     if (data.promptFeedback?.blockReason) {
-      console.warn('[OCR] Prompt bloqué par Safety filters:', data.promptFeedback.blockReason)
-      return NextResponse.json(EMPTY)
+      const reason = data.promptFeedback.blockReason
+      console.error(
+        `[OCR] 🚫 Bloqué par les filtres de sécurité Google — raison : ${reason}\n` +
+        `  safetyRatings : ${JSON.stringify(data.promptFeedback.safetyRatings ?? [])}`,
+      )
+      return NextResponse.json(
+        { error: 'safety_block', message: `Bloqué par les filtres de sécurité Google (${reason})`, ...EMPTY },
+        { status: 200 }, // Gemini retourne 200 même sur un Safety block
+      )
     }
 
-    rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    // ── Safety block au niveau du candidat (finishReason = SAFETY) ───────────
+    const candidate   = data.candidates?.[0]
+    const finishReason = candidate?.finishReason ?? ''
+
+    if (finishReason === 'SAFETY') {
+      const ratings = candidate?.safetyRatings ?? []
+      const blocked = ratings.filter(r => r.blocked || r.probability !== 'NEGLIGIBLE')
+      console.error(
+        '[OCR] 🚫 Bloqué par les filtres de sécurité Google — candidate finishReason=SAFETY\n' +
+        `  Catégories concernées : ${JSON.stringify(blocked)}`,
+      )
+      return NextResponse.json(
+        { error: 'safety_block', message: 'Bloqué par les filtres de sécurité Google (candidate)', ...EMPTY },
+        { status: 200 },
+      )
+    }
+
+    rawText = candidate?.content?.parts?.[0]?.text ?? ''
 
     if (!rawText) {
-      const finishReason = data.candidates?.[0]?.finishReason ?? 'inconnu'
-      console.warn(`[OCR] Texte vide — finishReason: ${finishReason}`)
+      console.warn(`[OCR] Texte vide — finishReason: ${finishReason || 'inconnu'} — réponse complète:`, JSON.stringify(data).slice(0, 400))
       return NextResponse.json(EMPTY)
     }
 
