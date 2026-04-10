@@ -152,6 +152,10 @@ export async function runOcr(
   onProgress(32)
 
   // ── ③ Appel API /api/ocr ──────────────────────────────────────────────────
+  //
+  // La route retourne TOUJOURS HTTP 200 (sauf 429 quota).
+  // Les erreurs Gemini sont dans le body JSON : { error, message, geminiRaw }.
+  // Seules les exceptions fetch() (réseau coupé, timeout) → pendingOffline.
   let apiResult: {
     total:         number | null
     volume:        number | null
@@ -159,6 +163,7 @@ export async function runOcr(
     error?:        string
     message?:      string
     retryAfter?:   number
+    offline?:      boolean
   }
 
   try {
@@ -171,84 +176,60 @@ export async function runOcr(
 
     onProgress(80)
 
-    // ── Lecture du body UNE SEULE FOIS ────────────────────────────────────
     const bodyText = await res.text()
 
-    if (!res.ok) {
-      // Log toujours lisible dans DevTools — visible même sur Vercel
-      console.error(
-        `[GeminiOCR] ❌ HTTP ${res.status} depuis /api/ocr\n` +
-        `  Body : ${bodyText.slice(0, 500)}\n` +
-        `  → Raisons probables : clé API manquante sur Vercel, image trop grande, quota dépassé`,
-      )
-
-      // 429 — Quota Gemini dépassé
-      if (res.status === 429) {
-        let retryAfter = 60
-        try {
-          const parsed = JSON.parse(bodyText) as { retryAfter?: number }
-          if (typeof parsed.retryAfter === 'number') retryAfter = parsed.retryAfter
-        } catch { /* body non-JSON */ }
-
-        return {
-          preprocessedUrl: imageUrl,
-          pendingOffline:  true,
-          offlineQueueId:  offlineId,
-          quotaError:      true,
-          retryAfter,
-        }
-      }
-
-      // 413 — Image trop grande (ne devrait plus arriver après compression)
-      if (res.status === 413) {
-        console.error('[GeminiOCR] 413 — image trop grande malgré compression. Vérifier MAX_IMAGE_PX.')
-        return { preprocessedUrl: imageUrl, pendingOffline: true, offlineQueueId: offlineId }
-      }
-
-      // 500 — Probablement GEMINI_API_KEY absente sur Vercel
-      if (res.status === 500) {
-        console.error(
-          '[GeminiOCR] 500 — VÉRIFIER Vercel > Settings > Environment Variables :\n' +
-          '  GEMINI_API_KEY = AIza... (clé Google AI Studio)',
-        )
-        return { preprocessedUrl: imageUrl, pendingOffline: true, offlineQueueId: offlineId }
-      }
-
-      // Autre erreur HTTP
-      throw new Error(`HTTP ${res.status}: ${bodyText.slice(0, 200)}`)
+    // 429 — Quota Gemini — seul cas non-200 restant
+    if (res.status === 429) {
+      let retryAfter = 60
+      try {
+        const parsed = JSON.parse(bodyText) as { retryAfter?: number }
+        if (typeof parsed.retryAfter === 'number') retryAfter = parsed.retryAfter
+      } catch { /* body non-JSON */ }
+      console.warn(`[GeminiOCR] Quota Gemini dépassé — retry in ${retryAfter}s`)
+      return { preprocessedUrl: imageUrl, pendingOffline: true, offlineQueueId: offlineId, quotaError: true, retryAfter }
     }
 
-    // Parse du résultat JSON
     try {
       apiResult = JSON.parse(bodyText)
     } catch {
       console.error('[GeminiOCR] Body non-JSON de /api/ocr:', bodyText.slice(0, 200))
-      throw new Error('Réponse /api/ocr non-JSON')
+      return { preprocessedUrl: imageUrl, errorMessage: `Réponse illisible du serveur : ${bodyText.slice(0, 100)}`, fromGemini: true }
+    }
+
+    // La route a signalé une erreur réseau/timeout côté serveur
+    if (apiResult.offline) {
+      console.error('[GeminiOCR] Timeout/réseau côté serveur:', apiResult.message)
+      return { preprocessedUrl: imageUrl, pendingOffline: true, offlineQueueId: offlineId }
+    }
+
+    // Erreur API Gemini (safety, clé invalide, format…) — PAS un problème réseau
+    if (apiResult.error) {
+      const msg = apiResult.message ?? apiResult.error
+      console.error(`[GeminiOCR] ❌ Erreur Gemini [${apiResult.error}]: ${msg}`)
+      // Pas pendingOffline — l'utilisateur doit voir le message exact, pas "hors-ligne"
+      return {
+        preprocessedUrl: imageUrl,
+        fromGemini:      true,
+        errorMessage:    msg,
+      }
     }
 
   } catch (fetchErr) {
+    // Exception fetch = vrai problème réseau (DNS, TCP, timeout client)
     const isTimeout = fetchErr instanceof DOMException && fetchErr.name === 'TimeoutError'
     const isOffline = !navigator.onLine
-
     console.error(
-      `[GeminiOCR] ${isTimeout ? '⏱ Timeout' : isOffline ? '📵 Hors-ligne' : '🌐 Erreur réseau'}:`,
+      `[GeminiOCR] ${isTimeout ? '⏱ Timeout client' : isOffline ? '📵 Hors-ligne' : '🌐 Réseau'}:`,
       fetchErr,
     )
-
-    return {
-      preprocessedUrl: imageUrl,
-      pendingOffline:  true,
-      offlineQueueId:  offlineId,
-    }
+    return { preprocessedUrl: imageUrl, pendingOffline: true, offlineQueueId: offlineId }
   }
 
   onProgress(90)
 
   // ── ④ Succès — supprimer de la file offline ───────────────────────────────
   if (offlineId) {
-    deletePendingPhoto(offlineId).catch(() => {
-      // Non bloquant — la prochaine analyse nettoiera
-    })
+    deletePendingPhoto(offlineId).catch(() => { /* Non bloquant */ })
   }
 
   // ── ⑤ Construction du résultat ────────────────────────────────────────────

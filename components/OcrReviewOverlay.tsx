@@ -236,7 +236,7 @@ function GeminiLoader({ progress }: { progress: number }) {
   )
 }
 
-// ── Bannière hors-ligne ───────────────────────────────────────────────────────
+// ── Bannière hors-ligne (vraie coupure réseau) ────────────────────────────────
 
 function OfflineBanner() {
   return (
@@ -263,6 +263,41 @@ function OfflineBanner() {
         <p style={{ fontSize: 11, color: 'rgba(255,180,80,0.8)', lineHeight: 1.6 }}>
           Photo sauvegardée localement. L&apos;analyse Gemini sera lancée dès
           le retour de la connexion. Vous pouvez aussi saisir les valeurs manuellement.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Bannière erreur API Gemini (réseau OK, Gemini KO) ────────────────────────
+
+function ApiErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      className="mx-5 mt-4 mb-0 flex items-start gap-3 rounded-2xl px-4 py-3.5"
+      style={{
+        backgroundColor: 'rgba(255,50,50,0.07)',
+        border: '1px solid rgba(255,80,80,0.28)',
+      }}
+    >
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 flex-shrink-0"
+        style={{ backgroundColor: 'rgba(255,60,60,0.15)', border: '1px solid rgba(255,80,80,0.35)' }}
+      >
+        <AlertTriangle size={13} style={{ color: '#FF5555' }} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <p style={{
+          fontFamily: 'monospace', fontWeight: 700, fontSize: 9,
+          letterSpacing: '0.16em', textTransform: 'uppercase', color: '#FF5555', marginBottom: 4,
+        }}>
+          Erreur Gemini
+        </p>
+        <p style={{ fontSize: 11, color: 'rgba(255,120,120,0.85)', lineHeight: 1.6, wordBreak: 'break-word' }}>
+          {message}
+        </p>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
+          Vérifiez les logs Vercel ou DevTools → Console pour le détail complet.
         </p>
       </div>
     </div>
@@ -358,6 +393,7 @@ export function OcrReviewOverlay({
 
   const canConfirm    = values.liters && values.totalCost
   const isOffline     = localExtracted.pendingOffline === true
+  const isApiError    = !isOffline && !!localExtracted.errorMessage
   const isFromGemini  = localExtracted.fromGemini === true
   const allFound      = localExtracted.liters && localExtracted.pricePerLiter && localExtracted.totalCost
 
@@ -393,6 +429,14 @@ export function OcrReviewOverlay({
               <span className="text-sm font-bold uppercase tracking-[0.18em]"
                 style={{ color: '#FF8C00', fontFamily: 'var(--font-condensed)' }}>
                 Hors-ligne
+              </span>
+            </>
+          ) : isApiError ? (
+            <>
+              <AlertTriangle size={13} style={{ color: '#FF5555' }} />
+              <span className="text-sm font-bold uppercase tracking-[0.18em]"
+                style={{ color: '#FF5555', fontFamily: 'var(--font-condensed)' }}>
+                Erreur Gemini
               </span>
             </>
           ) : allFound ? (
@@ -501,8 +545,11 @@ export function OcrReviewOverlay({
           <GeminiLoader progress={progress} />
         ) : (
           <div>
-            {/* Bannière hors-ligne */}
+            {/* Bannière hors-ligne (réseau coupé) */}
             {isOffline && <OfflineBanner />}
+
+            {/* Bannière erreur API Gemini (réseau OK mais Gemini a rejeté) */}
+            {isApiError && <ApiErrorBanner message={localExtracted.errorMessage!} />}
 
             {/* Champs */}
             <div className="mt-2">
@@ -553,7 +600,7 @@ export function OcrReviewOverlay({
             }}
           >
             <Check size={16} strokeWidth={2.5} />
-            {isOffline ? 'Saisir manuellement' : 'Confirmer ce plein'}
+            {isOffline || isApiError ? 'Saisir manuellement' : 'Confirmer ce plein'}
           </button>
 
           <button

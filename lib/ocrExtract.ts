@@ -43,6 +43,8 @@ export interface OcrExtracted {
   quotaError?: boolean
   /** Secondes à attendre avant de pouvoir réessayer (extrait du 429) */
   retryAfter?: number
+  /** Message d'erreur Gemini lisible — affiché dans l'overlay à la place de "hors-ligne" */
+  errorMessage?: string
 }
 
 // ─────────────────────────────────────────────────────────────
