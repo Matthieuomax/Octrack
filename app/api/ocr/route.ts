@@ -25,7 +25,7 @@ export const runtime = 'edge'
 //
 // Design :
 //   • Instructions dans le 1er message "user" — plus compatible que system_instruction
-//     sur toutes les versions de gemini-1.5-flash déployées
+//     sur toutes les versions de gemini-2.0-flash déployées
 //   • Exemples concrets — ancre le format de sortie
 //   • "null" explicitement mentionné — évite les hallucinations
 
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
   //
   // Notes de format :
   //   • Le prompt est dans "contents[0].parts" (pas system_instruction top-level)
-  //     — plus compatible avec toutes les versions Flash déployées sur v1beta
+  //     — plus compatible avec toutes les versions déployées
   //   • safetySettings BLOCK_NONE — Gemini peut bloquer des photos de pompes
   //     si logos ou reflets déclenchent les filtres DANGEROUS_CONTENT
   //   • Pas de responseMimeType — champ instable, on parse le texte brut
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
   let geminiRes: Response
   try {
     geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
