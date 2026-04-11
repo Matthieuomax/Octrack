@@ -99,11 +99,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'no_api_key', message: msg, ...EMPTY })
   }
 
-  // ── Appel Gemini 1.5 Flash ────────────────────────────────────────────────
+  // ── Appel Gemini 2.0 Flash ────────────────────────────────────────────────
   //
-  // gemini-1.5-flash sur v1beta :
-  //   • Quota free tier garanti : 15 req/min, 1 500 req/jour
-  //   • Disponible sur toute clé créée via AI Studio (aistudio.google.com)
+  // gemini-2.0-flash sur v1beta :
+  //   • Confirmé présent dans ListModels pour ce compte
+  //   • Pas de "thinking" → JSON propre, sans tokens parasites
+  //   • Free tier OK avec une clé créée via AI Studio "new project"
   //   • v1beta requis pour les clés API simples (v1 = service accounts uniquement)
   //   • safetySettings BLOCK_NONE — évite les faux blocages sur photos de pompes
   const requestBody = {
@@ -124,14 +125,13 @@ export async function POST(req: NextRequest) {
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     ],
     generationConfig: {
-      temperature:      0,              // déterministe — critique pour les chiffres
-      topK:             1,
-      maxOutputTokens:  500,
-      responseMimeType: 'application/json', // force une réponse JSON pure, sans markdown wrapper
+      temperature:     0,    // déterministe — critique pour les chiffres
+      topK:            1,
+      maxOutputTokens: 500,
     },
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
   // Log de l'URL complète (clé masquée) — visible dans Vercel Functions logs
   console.info(`[OCR] → Appel Gemini : ${GEMINI_URL.replace(apiKey, apiKey.slice(0, 8) + '...')}`)
 
