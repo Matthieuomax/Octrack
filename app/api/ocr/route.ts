@@ -99,12 +99,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'no_api_key', message: msg, ...EMPTY })
   }
 
-  // ── Appel Gemini 2.0 Flash ────────────────────────────────────────────────
+  // ── Appel Gemini 2.5 Flash (thinking désactivé) ──────────────────────────
   //
-  // gemini-2.0-flash sur v1beta :
-  //   • Confirmé présent dans ListModels pour ce compte
-  //   • Pas de "thinking" → JSON propre, sans tokens parasites
-  //   • Free tier OK avec une clé créée via AI Studio "new project"
+  // gemini-2.5-flash + thinkingBudget:0 :
+  //   • gemini-2.0-flash a limit:0 free tier sur ce compte → 429 persistant
+  //   • gemini-2.5-flash a un quota pool différent (modèle stable juin 2025)
+  //   • thinkingBudget:0 désactive le thinking → plus de tokens parasites avant le JSON
+  //   • outputTokenLimit: 65536 → largement assez pour {"total":..., "volume":...}
   //   • v1beta requis pour les clés API simples (v1 = service accounts uniquement)
   //   • safetySettings BLOCK_NONE — évite les faux blocages sur photos de pompes
   const requestBody = {
@@ -128,10 +129,13 @@ export async function POST(req: NextRequest) {
       temperature:     0,    // déterministe — critique pour les chiffres
       topK:            1,
       maxOutputTokens: 500,
+      thinkingConfig: {
+        thinkingBudget: 0,   // désactive le thinking → JSON direct, sans tokens parasites
+      },
     },
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
   // Log de l'URL complète (clé masquée) — visible dans Vercel Functions logs
   console.info(`[OCR] → Appel Gemini : ${GEMINI_URL.replace(apiKey, apiKey.slice(0, 8) + '...')}`)
 
