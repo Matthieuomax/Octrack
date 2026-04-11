@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     },
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
   // Log de l'URL complète (clé masquée) — visible dans Vercel Functions logs
   console.info(`[OCR] → Appel Gemini : ${GEMINI_URL.replace(apiKey, apiKey.slice(0, 8) + '...')}`)
 
