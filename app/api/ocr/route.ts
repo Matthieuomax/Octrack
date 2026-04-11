@@ -99,16 +99,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'no_api_key', message: msg, ...EMPTY })
   }
 
-  // ── Appel Gemini 2.0 Flash ───────────────────────────────────────────────
+  // ── Appel Gemini 1.5 Flash ────────────────────────────────────────────────
   //
-  // gemini-2.0-flash (pas 2.5) :
-  //   • Pas de "thinking" — gemini-2.5 génère des tokens de raisonnement qui
-  //     consomment le budget maxOutputTokens avant même le JSON → JSON tronqué
-  //   • 10× moins cher que 2.5 pour ce cas d'usage (lire 3 chiffres)
-  //   • Latence plus faible (~1-2 s vs 5-10 s pour 2.5)
-  //   • safetySettings BLOCK_NONE — Gemini peut bloquer des photos de pompes
-  //     si logos ou reflets déclenchent les filtres DANGEROUS_CONTENT
-  //   • Pas de responseMimeType — champ instable, on parse le texte brut
+  // gemini-1.5-flash sur v1beta :
+  //   • Quota free tier garanti : 15 req/min, 1 500 req/jour
+  //   • Disponible sur toute clé créée via AI Studio (aistudio.google.com)
+  //   • v1beta requis pour les clés API simples (v1 = service accounts uniquement)
+  //   • safetySettings BLOCK_NONE — évite les faux blocages sur photos de pompes
   const requestBody = {
     contents: [
       {
@@ -127,13 +124,14 @@ export async function POST(req: NextRequest) {
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     ],
     generationConfig: {
-      temperature:     0,    // déterministe — obligatoire pour les chiffres
-      topK:            1,
-      maxOutputTokens: 512,  // 256 trop court avec gemini-2.5 (thinking tokens) ; 512 largement suffisant pour le JSON
+      temperature:      0,              // déterministe — critique pour les chiffres
+      topK:             1,
+      maxOutputTokens:  500,
+      responseMimeType: 'application/json', // force une réponse JSON pure, sans markdown wrapper
     },
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
   // Log de l'URL complète (clé masquée) — visible dans Vercel Functions logs
   console.info(`[OCR] → Appel Gemini : ${GEMINI_URL.replace(apiKey, apiKey.slice(0, 8) + '...')}`)
 

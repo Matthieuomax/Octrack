@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, RotateCcw, Check, AlertTriangle, WifiOff } from 'lucide-react'
+import { X, RotateCcw, Check, AlertTriangle, WifiOff, Gauge } from 'lucide-react'
 import { mathCheck } from '@/lib/ocrExtract'
 import type { OcrExtracted } from '@/lib/ocrExtract'
 import type { FuelType } from '@/lib/types'
@@ -269,6 +269,44 @@ function OfflineBanner() {
   )
 }
 
+// ── Bannière quota Gemini dépassé ────────────────────────────────────────────
+
+function QuotaBanner({ retryAfter }: { retryAfter?: number }) {
+  return (
+    <div
+      className="mx-5 mt-4 mb-0 flex items-start gap-3 rounded-2xl px-4 py-3.5"
+      style={{
+        backgroundColor: 'rgba(255,80,0,0.07)',
+        border: '1px solid rgba(255,100,0,0.28)',
+      }}
+    >
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: 'rgba(255,80,0,0.15)', border: '1px solid rgba(255,100,0,0.35)' }}
+      >
+        <Gauge size={13} style={{ color: '#FF6400' }} />
+      </div>
+      <div>
+        <p style={{
+          fontFamily: 'monospace', fontWeight: 700, fontSize: 9,
+          letterSpacing: '0.16em', textTransform: 'uppercase', color: '#FF6400', marginBottom: 4,
+        }}>
+          Quota Gemini dépassé
+        </p>
+        <p style={{ fontSize: 11, color: 'rgba(255,160,80,0.85)', lineHeight: 1.6 }}>
+          {retryAfter
+            ? `Limite atteinte — réessaie dans ~${retryAfter}s.`
+            : 'Limite de requêtes atteinte sur ce compte Google AI Studio.'}
+          {' '}Photo sauvegardée, saisie manuelle possible.
+        </p>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>
+          → aistudio.google.com/app/apikey — vérifier le plan et le quota
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Bannière erreur API Gemini (réseau OK, Gemini KO) ────────────────────────
 
 function ApiErrorBanner({ message }: { message: string }) {
@@ -392,8 +430,9 @@ export function OcrReviewOverlay({
     setValues((prev) => ({ ...prev, [field]: v }))
 
   const canConfirm    = values.liters && values.totalCost
-  const isOffline     = localExtracted.pendingOffline === true
-  const isApiError    = !isOffline && !!localExtracted.errorMessage
+  const isQuotaError  = localExtracted.pendingOffline === true && localExtracted.quotaError === true
+  const isOffline     = localExtracted.pendingOffline === true && !isQuotaError
+  const isApiError    = !isOffline && !isQuotaError && !!localExtracted.errorMessage
   const isFromGemini  = localExtracted.fromGemini === true
   const allFound      = localExtracted.liters && localExtracted.pricePerLiter && localExtracted.totalCost
 
@@ -421,6 +460,14 @@ export function OcrReviewOverlay({
               <span className="text-sm font-bold uppercase tracking-[0.18em]"
                 style={{ color: 'rgba(255,255,255,0.6)', fontFamily: 'var(--font-condensed)' }}>
                 Analyse{dots}
+              </span>
+            </>
+          ) : isQuotaError ? (
+            <>
+              <Gauge size={13} style={{ color: '#FF6400' }} />
+              <span className="text-sm font-bold uppercase tracking-[0.18em]"
+                style={{ color: '#FF6400', fontFamily: 'var(--font-condensed)' }}>
+                Quota dépassé
               </span>
             </>
           ) : isOffline ? (
@@ -545,6 +592,9 @@ export function OcrReviewOverlay({
           <GeminiLoader progress={progress} />
         ) : (
           <div>
+            {/* Bannière quota Gemini */}
+            {isQuotaError && <QuotaBanner retryAfter={localExtracted.retryAfter} />}
+
             {/* Bannière hors-ligne (réseau coupé) */}
             {isOffline && <OfflineBanner />}
 
@@ -600,7 +650,7 @@ export function OcrReviewOverlay({
             }}
           >
             <Check size={16} strokeWidth={2.5} />
-            {isOffline || isApiError ? 'Saisir manuellement' : 'Confirmer ce plein'}
+            {isOffline || isQuotaError || isApiError ? 'Saisir manuellement' : 'Confirmer ce plein'}
           </button>
 
           <button
