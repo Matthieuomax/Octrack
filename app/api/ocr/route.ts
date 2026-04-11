@@ -99,11 +99,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'no_api_key', message: msg, ...EMPTY })
   }
 
-  // ── Appel Gemini 1.5 Flash ────────────────────────────────────────────────
+  // ── Appel Gemini 2.0 Flash ───────────────────────────────────────────────
   //
-  // Notes de format :
-  //   • Le prompt est dans "contents[0].parts" (pas system_instruction top-level)
-  //     — plus compatible avec toutes les versions déployées
+  // gemini-2.0-flash (pas 2.5) :
+  //   • Pas de "thinking" — gemini-2.5 génère des tokens de raisonnement qui
+  //     consomment le budget maxOutputTokens avant même le JSON → JSON tronqué
+  //   • 10× moins cher que 2.5 pour ce cas d'usage (lire 3 chiffres)
+  //   • Latence plus faible (~1-2 s vs 5-10 s pour 2.5)
   //   • safetySettings BLOCK_NONE — Gemini peut bloquer des photos de pompes
   //     si logos ou reflets déclenchent les filtres DANGEROUS_CONTENT
   //   • Pas de responseMimeType — champ instable, on parse le texte brut
@@ -127,11 +129,11 @@ export async function POST(req: NextRequest) {
     generationConfig: {
       temperature:     0,    // déterministe — obligatoire pour les chiffres
       topK:            1,
-      maxOutputTokens: 256,
+      maxOutputTokens: 512,  // 256 trop court avec gemini-2.5 (thinking tokens) ; 512 largement suffisant pour le JSON
     },
   }
 
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
   // Log de l'URL complète (clé masquée) — visible dans Vercel Functions logs
   console.info(`[OCR] → Appel Gemini : ${GEMINI_URL.replace(apiKey, apiKey.slice(0, 8) + '...')}`)
 
@@ -276,8 +278,13 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Nettoyage et extraction JSON ──────────────────────────────────────────
-  const cleaned   = rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim()
-  const jsonMatch = cleaned.match(/\{[\s\S]*?\}/)
+  const cleaned = rawText
+    .replace(/^```(?:json)?\s*/im, '')  // retire ```json en tête
+    .replace(/\s*```\s*$/im, '')         // retire ``` en queue
+    .trim()
+  // Greedy (*) et non (*?) : greedy capture tout de { au dernier }
+  // nécessaire car le JSON contient des décimaux genre {"total": 81.65, ...}
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
 
   if (!jsonMatch) {
     console.warn('[OCR] Aucun JSON dans:', cleaned.slice(0, 200))
