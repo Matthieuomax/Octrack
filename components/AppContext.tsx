@@ -11,7 +11,7 @@ import {
 } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { FillUp, Settings } from '@/lib/types'
-import { SAMPLE_FILLUPS, DEFAULT_SETTINGS } from '@/lib/sampleData'
+import { DEFAULT_SETTINGS } from '@/lib/sampleData'
 import { supabase, toEmail, fromEmail } from '@/lib/supabase'
 import {
   localGetFillUps,
@@ -76,11 +76,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = localGetFillUps()
     if (saved.length > 0) {
-      setFillUps(saved)
-    } else {
-      const samples = SAMPLE_FILLUPS.map((f) => ({ ...f, _synced: false }))
-      applyFillUps(samples)
+      // Filtre silencieux : supprime les données d'exemple (id commençant par 's')
+      // si elles sont encore présentes d'une installation précédente
+      const real = saved.filter((f) => !f.id.startsWith('s'))
+      setFillUps(real.length > 0 ? real : saved)
     }
+    // Sinon : démarrage propre — aucune donnée factice
 
     const savedSettings = localGetSettings()
     if (savedSettings) {

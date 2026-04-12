@@ -347,6 +347,8 @@ export default function StationsPage() {
         setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude })
         setGeoError(false)
         setIsFollowingUser(true)
+        // Recentre la carte sur la position réelle dès que le GPS répond
+        setRecenterTrigger((n) => n + 1)
       },
       () => {
         setUserPos({ lat: 48.8566, lng: 2.3522 })

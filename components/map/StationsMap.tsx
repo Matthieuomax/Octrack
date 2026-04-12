@@ -181,6 +181,8 @@ export default function StationsMap({
     stationMarkers: LType[]
     userMarker: LType | null
   } | null>(null)
+  // Ref pour accéder aux coords à jour sans déclencher le recenter sur chaque GPS update
+  const coordsRef = useRef({ lat: userLat, lng: userLng })
 
   /* ── Init carte ── */
   useEffect(() => {
@@ -268,7 +270,9 @@ export default function StationsMap({
   /* ── Recentrage ── */
   useEffect(() => {
     if (!recenterTrigger || !stateRef.current) return
-    stateRef.current.map.setView([userLat, userLng], 13, { animate: true, duration: 0.5 })
+    // Lit les coords depuis le ref pour avoir la valeur à jour sans re-trigger sur chaque GPS update
+    const { lat, lng } = coordsRef.current
+    stateRef.current.map.setView([lat, lng], 13, { animate: true, duration: 0.5 })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterTrigger])
 
@@ -280,6 +284,7 @@ export default function StationsMap({
 
   /* ── Mise à jour position utilisateur ── */
   useEffect(() => {
+    coordsRef.current = { lat: userLat, lng: userLng }
     const s = stateRef.current
     if (!s) return
     if (s.userMarker) {
