@@ -12,8 +12,31 @@ import { supabase } from './supabase'
 import type { FillUp, Settings } from './types'
 
 // ── Helpers localStorage ──────────────────────────────────────
-const LS_FILLUPS   = 'octrack_fillups'
-const LS_SETTINGS  = 'octrack_settings'
+const LS_FILLUPS          = 'octrack_fillups'
+const LS_SETTINGS         = 'octrack_settings'
+const LS_PENDING_DELETES  = 'octrack_pending_deletes'
+
+// File d'attente des suppressions : les IDs à supprimer dans Supabase.
+// Stockée dans localStorage pour survivre à un refresh avant que la requête aboutisse.
+export function localGetPendingDeletes(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_PENDING_DELETES)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+export function localAddPendingDelete(id: string): void {
+  try {
+    const ids = localGetPendingDeletes()
+    if (!ids.includes(id)) {
+      localStorage.setItem(LS_PENDING_DELETES, JSON.stringify([...ids, id]))
+    }
+  } catch { /* ignore */ }
+}
+
+function localClearPendingDeletes(): void {
+  localStorage.removeItem(LS_PENDING_DELETES)
+}
 
 export function localGetFillUps(): FillUp[] {
   try {
@@ -223,6 +246,26 @@ export async function fetchProfile(userId: string): Promise<Partial<Settings> | 
   }
 }
 
+// ── Traitement des suppressions en attente ────────────────────
+// Envoie à Supabase les suppressions qui auraient échoué ou qui n'ont pas eu le
+// temps de partir avant un refresh (fire-and-forget interrompu par navigation).
+export async function processPendingDeletes(userId: string): Promise<void> {
+  const ids = localGetPendingDeletes()
+  if (!ids.length) return
+
+  const { error } = await supabase
+    .from('fill_ups')
+    .delete()
+    .eq('user_id', userId)
+    .in('id', ids)
+
+  if (!error) {
+    localClearPendingDeletes()
+  } else {
+    console.error('[Sync] processPendingDeletes error:', error.message)
+  }
+}
+
 // ── Purge des IDs d'exemple dans Supabase (one-shot par appareil) ────────────
 // Les versions précédentes de l'app poussaient les fill-ups d'exemple (s1–s12)
 // dans Supabase. Cette fonction les supprime une seule fois, puis mémorise
@@ -268,9 +311,13 @@ export async function purgeUserData(userId: string): Promise<void> {
 export async function fullSync(
   userId: string,
 ): Promise<{ fillUps: FillUp[]; remoteSettings: Partial<Settings> | null }> {
-  // Purge one-shot des IDs d'exemple qui auraient été poussés par d'anciennes versions
+  // 1. Supprime les IDs en attente (suppressions interrompues par un refresh)
+  await processPendingDeletes(userId)
+  // 2. Purge one-shot des IDs d'exemple hérités d'anciennes versions
   await purgeSampleRows(userId)
+  // 3. Pousse les fill-ups non-synced
   await pushPending(userId)
+  // 4. Récupère le profil et les fill-ups depuis Supabase
   const remoteSettings = await fetchProfile(userId)
   const fillUps = await pullRemote(userId)
   return { fillUps, remoteSettings }

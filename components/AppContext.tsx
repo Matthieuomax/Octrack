@@ -22,6 +22,8 @@ import {
   pushPending,
   purgeUserData,
   ensureProfile,
+  localAddPendingDelete,
+  processPendingDeletes,
 } from '@/lib/syncManager'
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
@@ -255,18 +257,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 1. Mise à jour locale immédiate (UI réactive)
       applyFillUps(fillUps.filter((f) => f.id !== id))
 
-      // 2. Suppression directe dans Supabase si connecté.
-      //    On ne passe plus par pushPending/soft-delete : le soft-delete retirait l'item
-      //    de localStorage AVANT que pushPending puisse le lire, donc Supabase ne recevait rien.
+      // 2. Enfile l'ID dans la queue localStorage AVANT l'appel réseau.
+      //    Garantit que si le refresh arrive avant la fin de la requête,
+      //    fullSync → processPendingDeletes() terminera le travail au prochain chargement.
+      localAddPendingDelete(id)
+
+      // 3. Tente la suppression immédiate si connecté
       if (user) {
-        supabase
-          .from('fill_ups')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', user.id)
-          .then(({ error }) => {
-            if (error) console.error('[Delete] Supabase error:', error.message)
-          })
+        processPendingDeletes(user.id).catch((err) =>
+          console.error('[Delete] processPendingDeletes error:', err),
+        )
       }
     },
     [fillUps, applyFillUps, user],
