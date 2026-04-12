@@ -252,16 +252,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteFillUp = useCallback(
     (id: string) => {
+      // 1. Mise à jour locale immédiate (UI réactive)
+      applyFillUps(fillUps.filter((f) => f.id !== id))
+
+      // 2. Suppression directe dans Supabase si connecté.
+      //    On ne passe plus par pushPending/soft-delete : le soft-delete retirait l'item
+      //    de localStorage AVANT que pushPending puisse le lire, donc Supabase ne recevait rien.
       if (user) {
-        // Soft delete : marque _deletedAt et re-sync
-        const updated = fillUps.map((f) =>
-          f.id === id ? { ...f, _deletedAt: new Date().toISOString(), _synced: false } : f,
-        )
-        applyFillUps(updated.filter((f) => !f._deletedAt))
-        // Push la suppression en background
-        pushPending(user.id)
-      } else {
-        applyFillUps(fillUps.filter((f) => f.id !== id))
+        supabase
+          .from('fill_ups')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .then(({ error }) => {
+            if (error) console.error('[Delete] Supabase error:', error.message)
+          })
       }
     },
     [fillUps, applyFillUps, user],
