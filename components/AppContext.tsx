@@ -20,6 +20,7 @@ import {
   localSetSettings,
   fullSync,
   pushPending,
+  purgeUserData,
   ensureProfile,
 } from '@/lib/syncManager'
 
@@ -44,6 +45,8 @@ interface AppContextType {
   syncStatus: SyncStatus
   pendingCount: number
   triggerSync: () => Promise<void>
+  // Reset
+  resetAllData: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | null>(null)
@@ -192,6 +195,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  // ── Reset complet (localStorage + Supabase) ───────────────
+  const resetAllData = useCallback(async () => {
+    // 1. Vider l'état React immédiatement (UX réactive)
+    setFillUps([])
+    setSettings(DEFAULT_SETTINGS)
+    // 2. Vider le localStorage
+    localSetFillUps([])
+    localSetSettings(DEFAULT_SETTINGS)
+    // 3. Supprimer les données dans Supabase si connecté
+    if (user) {
+      await purgeUserData(user.id)
+    }
+  }, [user])
+
   // ── CRUD ──────────────────────────────────────────────────
   const addFillUp = useCallback(
     (fillUp: Omit<FillUp, 'id'>) => {
@@ -293,6 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         syncStatus,
         pendingCount,
         triggerSync,
+        resetAllData,
       }}
     >
       {children}

@@ -14,6 +14,50 @@ import { formatDistance } from '@/lib/stationsTypes'
 
 type Mode = 'camera' | 'manual' | 'confirm'
 
+// ─── FormField — composant TOP-LEVEL (ne JAMAIS définir à l'intérieur d'un autre
+//     composant : React verrait un nouveau type à chaque render → unmount → perte de focus)
+interface FormFieldProps {
+  label: string
+  field: keyof FormData
+  type?: string
+  placeholder?: string
+  unit?: string
+  value: string
+  error?: string
+  onUpdate: (field: keyof FormData, value: string) => void
+}
+function FormField({ label, field, type = 'text', placeholder, unit, value, error, onUpdate }: FormFieldProps) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-muted)' }}>
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type={type}
+          inputMode={type === 'number' ? 'decimal' : undefined}
+          value={value}
+          onChange={(e) => onUpdate(field, e.target.value)}
+          placeholder={placeholder}
+          className="input-field"
+          style={unit ? { paddingRight: '48px' } : {}}
+        />
+        {unit && (
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--color-muted)' }}>
+            {unit}
+          </span>
+        )}
+      </div>
+      {error && (
+        <p className="flex items-center gap-1 text-xs mt-1" style={{ color: 'var(--color-alert)' }}>
+          <AlertCircle size={11} />
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface FormData {
   date: string
   liters: string
@@ -318,51 +362,6 @@ function ManualEntry({
     onSuccess()
   }
 
-  const Field = ({
-    label,
-    field,
-    type = 'text',
-    placeholder,
-    unit,
-  }: {
-    label: string
-    field: keyof FormData
-    type?: string
-    placeholder?: string
-    unit?: string
-  }) => (
-    <div>
-      <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-muted)' }}>
-        {label}
-      </label>
-      <div className="relative">
-        <input
-          type={type}
-          inputMode={type === 'number' ? 'decimal' : undefined}
-          value={form[field]}
-          onChange={(e) => update(field, e.target.value)}
-          placeholder={placeholder}
-          className="input-field"
-          style={unit ? { paddingRight: '48px' } : {}}
-        />
-        {unit && (
-          <span
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-sm"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            {unit}
-          </span>
-        )}
-      </div>
-      {errors[field] && (
-        <p className="flex items-center gap-1 text-xs mt-1" style={{ color: 'var(--color-alert)' }}>
-          <AlertCircle size={11} />
-          {errors[field]}
-        </p>
-      )}
-    </div>
-  )
-
   return (
     <div className="space-y-5 pb-4">
       {/* Section principale */}
@@ -374,11 +373,14 @@ function ManualEntry({
           Données plein
         </p>
 
-        <Field label="Date" field="date" type="date" />
+        <FormField label="Date" field="date" type="date"
+          value={form.date} error={errors.date} onUpdate={update} />
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Litres" field="liters" type="number" placeholder="42.5" unit="L" />
-          <Field label="Prix/Litre" field="pricePerLiter" type="number" placeholder="1.799" unit="€" />
+          <FormField label="Litres" field="liters" type="number" placeholder="42.5" unit="L"
+            value={form.liters} error={errors.liters} onUpdate={update} />
+          <FormField label="Prix/Litre" field="pricePerLiter" type="number" placeholder="1.799" unit="€"
+            value={form.pricePerLiter} error={errors.pricePerLiter} onUpdate={update} />
         </div>
 
         <div>
@@ -438,9 +440,12 @@ function ManualEntry({
           Infos optionnelles
         </p>
 
-        <Field label="Kilométrage" field="km" type="number" placeholder="87 340" unit="km" />
-        <Field label="Station" field="station" placeholder="Total, BP, Shell…" />
-        <Field label="Notes" field="notes" placeholder="Autoroute A6, promotions…" />
+        <FormField label="Kilométrage" field="km" type="number" placeholder="87 340" unit="km"
+          value={form.km} error={errors.km} onUpdate={update} />
+        <FormField label="Station" field="station" placeholder="Total, BP, Shell…"
+          value={form.station} error={errors.station} onUpdate={update} />
+        <FormField label="Notes" field="notes" placeholder="Autoroute A6, promotions…"
+          value={form.notes} error={errors.notes} onUpdate={update} />
       </div>
 
       <button onClick={handleSubmit} className="btn-primary">

@@ -109,8 +109,12 @@ export async function pullRemote(userId: string): Promise<FillUp[]> {
     return localGetFillUps()
   }
 
+  // Filtre défensif : les IDs d'exemple (s1–s12) ne doivent JAMAIS remonter
+  // même s'ils ont été poussés dans Supabase par une ancienne version de l'app.
   const remoteMap = new Map<string, FillUp>(
-    (data ?? []).map((r) => [r.id, fromRow(r)]),
+    (data ?? [])
+      .filter((r) => !/^s\d+$/.test(r.id))
+      .map((r) => [r.id, fromRow(r)]),
   )
 
   // Overlay local non-synced par-dessus les distants
@@ -219,6 +223,38 @@ export async function fetchProfile(userId: string): Promise<Partial<Settings> | 
   }
 }
 
+// ── Purge des IDs d'exemple dans Supabase (one-shot par appareil) ────────────
+// Les versions précédentes de l'app poussaient les fill-ups d'exemple (s1–s12)
+// dans Supabase. Cette fonction les supprime une seule fois, puis mémorise
+// l'opération dans localStorage pour ne plus la rejouer.
+const LS_SAMPLE_PURGED = 'octrack_sample_purged'
+
+async function purgeSampleRows(userId: string): Promise<void> {
+  try {
+    if (localStorage.getItem(LS_SAMPLE_PURGED)) return
+    const SAMPLE_IDS = ['s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11','s12']
+    const { error } = await supabase
+      .from('fill_ups')
+      .delete()
+      .eq('user_id', userId)
+      .in('id', SAMPLE_IDS)
+    if (!error) localStorage.setItem(LS_SAMPLE_PURGED, '1')
+    else console.warn('[Sync] purgeSampleRows:', error.message)
+  } catch { /* non bloquant */ }
+}
+
+// ── Suppression totale des données utilisateur (reset depuis les réglages) ─────
+export async function purgeUserData(userId: string): Promise<void> {
+  // Supprime TOUS les fill-ups de l'utilisateur dans Supabase
+  const { error } = await supabase
+    .from('fill_ups')
+    .delete()
+    .eq('user_id', userId)
+  if (error) console.error('[Sync] purgeUserData error:', error.message)
+  // Réinitialise aussi le flag de purge pour qu'il n'y ait pas de résidus
+  localStorage.removeItem(LS_SAMPLE_PURGED)
+}
+
 // ── Full sync ─────────────────────────────────────────────────
 // Principe Full Cloud :
 //  1. Push les fill-ups locaux non-synced → Supabase
@@ -232,6 +268,8 @@ export async function fetchProfile(userId: string): Promise<Partial<Settings> | 
 export async function fullSync(
   userId: string,
 ): Promise<{ fillUps: FillUp[]; remoteSettings: Partial<Settings> | null }> {
+  // Purge one-shot des IDs d'exemple qui auraient été poussés par d'anciennes versions
+  await purgeSampleRows(userId)
   await pushPending(userId)
   const remoteSettings = await fetchProfile(userId)
   const fillUps = await pullRemote(userId)

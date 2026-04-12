@@ -124,7 +124,7 @@ function InlineInput({
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { settings, updateSettings, fillUps, user, signOut, syncStatus, pendingCount, triggerSync } = useApp()
+  const { settings, updateSettings, fillUps, user, signOut, syncStatus, pendingCount, triggerSync, resetAllData } = useApp()
 
   const [carBrand, setCarBrand] = useState(settings.carBrand)
   const [carModel, setCarModel] = useState(settings.carModel)
@@ -153,12 +153,10 @@ export default function SettingsPage() {
     updateSettings({ theme: v })
   }
 
-  const handleReset = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('octrack_fillups')
-      localStorage.removeItem('octrack_settings')
-      window.location.href = '/'
-    }
+  const handleReset = async () => {
+    await resetAllData()
+    // Navigation vers l'accueil sans rechargement complet (localStorage déjà propre)
+    router.push('/')
   }
 
   const tankVal = parseFloat(tankCapacity) || 50
