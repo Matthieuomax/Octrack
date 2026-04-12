@@ -123,11 +123,13 @@ export const SAMPLE_FILLUPS: FillUp[] = [
   },
 ]
 
+// Valeurs par défaut uniquement utilisées en mode hors-ligne / avant le premier sync.
+// En mode Full Cloud, le vrai profil est chargé depuis Supabase dès la connexion.
 export const DEFAULT_SETTINGS: Settings = {
-  carBrand: 'Peugeot',
-  carModel: '308',
-  carYear: '2022',
+  carBrand:     '',
+  carModel:     '',
+  carYear:      '',
   tankCapacity: 50,
-  fuelType: 'sp95',
-  theme: 'dark',
+  fuelType:     'sp95',
+  theme:        'dark',
 }

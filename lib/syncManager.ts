@@ -219,13 +219,21 @@ export async function fetchProfile(userId: string): Promise<Partial<Settings> | 
   }
 }
 
-// ── Full sync (push then pull) ────────────────────────────────
+// ── Full sync ─────────────────────────────────────────────────
+// Principe Full Cloud :
+//  1. Push les fill-ups locaux non-synced → Supabase
+//  2. Récupère le profil (settings) → source de vérité = serveur
+//  3. Pull les fill-ups distants et merge avec le non-synced local
+//
+// ⚠ NE pousse plus les settings ici — ils sont poussés immédiatement
+//   dans updateSettings (AppContext) dès que l'utilisateur fait un choix.
+//   Pousser les settings dans fullSync risquerait d'écraser le profil
+//   serveur avec les valeurs par défaut du nouvel appareil.
 export async function fullSync(
   userId: string,
-  settings: Settings,
-  username?: string,
-): Promise<FillUp[]> {
+): Promise<{ fillUps: FillUp[]; remoteSettings: Partial<Settings> | null }> {
   await pushPending(userId)
-  await syncSettings(userId, settings, username)
-  return pullRemote(userId)
+  const remoteSettings = await fetchProfile(userId)
+  const fillUps = await pullRemote(userId)
+  return { fillUps, remoteSettings }
 }

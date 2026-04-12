@@ -20,7 +20,6 @@ import {
   localSetSettings,
   fullSync,
   pushPending,
-  pullRemote,
   ensureProfile,
 } from '@/lib/syncManager'
 
@@ -75,13 +74,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Load from localStorage on mount ───────────────────────
   useEffect(() => {
     const saved = localGetFillUps()
-    if (saved.length > 0) {
-      // Filtre silencieux : supprime les données d'exemple (id commençant par 's')
-      // si elles sont encore présentes d'une installation précédente
-      const real = saved.filter((f) => !f.id.startsWith('s'))
-      setFillUps(real.length > 0 ? real : saved)
+    // Filtre les IDs d'exemple (commençant par 's') hérités d'anciennes versions.
+    // En mode Full Cloud, le serveur est la source de vérité → on ne charge jamais
+    // de données fictives, même si le localStorage est vide.
+    const real = saved.filter((f) => !f.id.startsWith('s'))
+    if (real.length !== saved.length) {
+      // Nettoie le localStorage si des exemples traînaient
+      localSetFillUps(real)
     }
-    // Sinon : démarrage propre — aucune donnée factice
+    setFillUps(real)
 
     const savedSettings = localGetSettings()
     if (savedSettings) {
@@ -90,7 +91,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       localSetSettings(DEFAULT_SETTINGS)
     }
     setLoaded(true)
-  }, [applyFillUps])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auth state listener ───────────────────────────────────
   useEffect(() => {
@@ -113,22 +114,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   // ── Sync trigger ──────────────────────────────────────────
+  // En mode Full Cloud :
+  //   • Les fill-ups locaux non-synced sont poussés vers Supabase.
+  //   • Le profil (settings) est tiré depuis Supabase — le serveur fait autorité.
+  //   • Les fill-ups distants sont mergés avec le non-synced local.
   const triggerSync = useCallback(async () => {
     if (!user || syncLock.current) return
     syncLock.current = true
     setSyncStatus('syncing')
     try {
-      const merged = await fullSync(user.id, settings, getUsername())
+      const { fillUps: merged, remoteSettings } = await fullSync(user.id)
+
+      // Applique les settings distants (source de vérité = serveur).
+      // Merge avec DEFAULT_SETTINGS pour garantir que tous les champs existent.
+      if (remoteSettings) {
+        applySettings({ ...DEFAULT_SETTINGS, ...remoteSettings })
+      }
+
       setFillUps(merged)
       setSyncStatus('synced')
     } catch {
       setSyncStatus('error')
     } finally {
       syncLock.current = false
-      // Remet à idle après 3s
       setTimeout(() => setSyncStatus((s) => (s === 'synced' ? 'idle' : s)), 3000)
     }
-  }, [user, settings, getUsername])
+  }, [user, applySettings])
 
   // ── Sync on online + on auth ──────────────────────────────
   useEffect(() => {
